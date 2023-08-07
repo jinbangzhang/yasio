@@ -59,7 +59,7 @@ struct yasio_kcp_options {
   int kcp_resend_   = 2;
   int kcp_ncwnd_    = 1;
 
-  int kcp_sndwnd_ = 32;
+  int kcp_sndwnd_ = 128;
   int kcp_rcvwnd_ = 128;
 
   int kcp_mtu_ = 1400;

@@ -87,7 +87,7 @@ enum
 } // namespace speedtest
 #endif
 
-static const double s_send_limit_time = 10; // max send time in seconds
+static const double s_send_limit_time = 30; // max send time in seconds
 
 static long long s_send_total_bytes = 0;
 static long long s_recv_total_bytes = 0;
@@ -95,7 +95,7 @@ static long long s_recv_total_bytes = 0;
 static double s_send_speed = 0; // bytes/s
 static double s_recv_speed = 0;
 
-static const long long s_kcp_send_interval = 10;   // (us) in microseconds
+static const long long s_kcp_send_interval = 150;   // (us) in microseconds
 static const uint32_t s_kcp_conv           = 8633; // can be any, but must same with two endpoint
 
 static const char* proto_name(int myproto)
@@ -140,8 +140,8 @@ static void print_speed_detail(double interval, double time_elapsed)
 void setup_kcp_transfer(transport_handle_t handle)
 {
   auto kcp_handle = static_cast<io_transport_kcp*>(handle)->internal_object();
-  ::ikcp_setmtu(kcp_handle, YASIO_SZ(63, k));
-  ::ikcp_wndsize(kcp_handle, 4096, 8192);
+  ::ikcp_setmtu(kcp_handle, 1500);
+  ::ikcp_wndsize(kcp_handle, 128, 128);
 }
 #endif
 
@@ -166,11 +166,12 @@ void ll_send_repeated(io_service* service, transport_handle_t thandle, obstream*
 
 void kcp_send_repeated(io_service* service, transport_handle_t thandle, obstream* obs)
 {
-  static long long time_start   = yasio::highp_clock<>();
+  static long long time_start = 0;
   static double time_elapsed    = 0;
   static double last_print_time = 0;
 
   highp_timer_ptr ignored_ret = service->schedule(std::chrono::microseconds(s_kcp_send_interval), [=](io_service&) {
+    if (time_start == 0) time_start = yasio::highp_clock<>();
     s_send_total_bytes += service->write(thandle, obs->buffer());
     time_elapsed = (yasio::highp_clock<>() - time_start) / 1000000.0;
     s_send_speed = s_send_total_bytes / time_elapsed;
@@ -184,7 +185,7 @@ void kcp_send_repeated(io_service* service, transport_handle_t thandle, obstream
 
 void start_sender(io_service& service)
 {
-  static const int PER_PACKET_SIZE = YASIO_SZ(62, k);
+  static const int PER_PACKET_SIZE = 1400;
   static char buffer[PER_PACKET_SIZE];
   static obstream obs;
   obs.write_bytes(buffer, PER_PACKET_SIZE);
@@ -249,7 +250,7 @@ void start_sender(io_service& service)
 static io_service* s_sender;
 void start_receiver(io_service& service)
 {
-  static long long time_start   = yasio::highp_clock<>();
+  static long long time_start = 0;
   static double last_print_time = 0;
   service.set_option(YOPT_S_FORWARD_PACKET, 1);
   service.set_option(YOPT_C_MOD_FLAGS, 0, YCF_REUSEADDR, 0);
@@ -260,6 +261,7 @@ void start_receiver(io_service& service)
     switch (event->kind())
     {
       case YEK_PACKET: {
+        if (time_start == 0) time_start = yasio::highp_clock<>();
         s_recv_total_bytes += event->packet_view().size();
         auto time_elapsed = (yasio::highp_clock<>() - time_start) / 1000000.0;
         s_recv_speed      = s_recv_total_bytes / time_elapsed;
